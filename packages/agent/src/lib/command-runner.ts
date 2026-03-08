@@ -134,12 +134,13 @@ export async function runCommandStep(
     const exitCode = result.exitCode ?? -1;
     const stdout = truncateOutput(result.stdout?.toString() ?? '');
     const stderr = truncateOutput(result.stderr?.toString() ?? '');
+    const commandSucceeded = exitCode === 0;
     const success = exitCode === 0 || step.allow_failure === true;
 
     outputs.set('exit_code', String(exitCode));
     outputs.set('stdout', stdout);
     outputs.set('stderr', stderr);
-    outputs.set('success', String(success));
+    outputs.set('success', String(commandSucceeded));
 
     const duration = (performance.now() - start) / 1000;
 

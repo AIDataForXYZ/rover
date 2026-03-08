@@ -256,7 +256,7 @@ describe('runCommandStep', () => {
     expect(result.error).toBeUndefined();
     expect(result.outputs.get('exit_code')).toBe('1');
     expect(result.outputs.get('stderr')).toBe('expected failure');
-    expect(result.outputs.get('success')).toBe('true');
+    expect(result.outputs.get('success')).toBe('false');
   });
 
   it('passes timeoutSeconds to launch as milliseconds', async () => {

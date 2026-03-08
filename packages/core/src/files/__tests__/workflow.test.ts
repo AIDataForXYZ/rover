@@ -1996,6 +1996,9 @@ steps:
       // The command step with allow_failure should be treated as success
       expect(result.stepResults[0].success).toBe(true);
       expect(result.runSteps).toBe(2);
+      expect(result.stepsOutput.get('maybe-fail')?.get('success')).toBe(
+        'false'
+      );
     });
 
     it('should expose exit_code and success outputs for fallback command execution', async () => {
@@ -2044,7 +2047,7 @@ steps:
       expect(result.stepsOutput.get('build')?.get('success')).toBe('true');
     });
 
-    it('should skip != step conditions when prerequisite outputs are missing', async () => {
+    it('should evaluate != step conditions against missing outputs', async () => {
       const yamlContent = `
 version: '1.0'
 name: missing-output-guard
@@ -2085,9 +2088,107 @@ steps:
       const result = await workflow.run(runner);
 
       expect(result.success).toBe(true);
-      expect(agentCalls).toBe(0);
-      expect(result.stepResults).toHaveLength(1);
+      expect(agentCalls).toBe(1);
+      expect(result.stepResults).toHaveLength(2);
       expect(result.stepsOutput.get('build')?.get('exit_code')).toBe('0');
+    });
+
+    it('should evaluate OR conditions when later clause outputs are missing', async () => {
+      const yamlContent = `
+version: '1.0'
+name: short-circuit-or-workflow
+description: OR conditions should short-circuit
+inputs: []
+outputs: []
+steps:
+  - id: build
+    type: command
+    name: Build
+    command: /bin/sh
+    args:
+      - -c
+      - "exit 0"
+  - id: verify
+    type: agent
+    name: Verify
+    if: steps.build.outputs.exit_code == 0 || steps.fix.outputs.retryable == true
+    prompt: Verify build output
+`;
+
+      writeFileSync(workflowPath, yamlContent, 'utf8');
+      const workflow = WorkflowManager.load(workflowPath);
+
+      let agentCalls = 0;
+      const runner: WorkflowRunner = {
+        runAgentStep: async step => {
+          agentCalls++;
+          return {
+            id: step.id,
+            success: true,
+            duration: 0.1,
+            outputs: new Map(),
+          };
+        },
+      };
+
+      const result = await workflow.run(runner);
+
+      expect(result.success).toBe(true);
+      expect(agentCalls).toBe(1);
+      expect(result.stepResults).toHaveLength(2);
+    });
+
+    it('should not treat allowed command failures as successful outputs', async () => {
+      const yamlContent = `
+version: '1.0'
+name: allow-failure-condition-workflow
+description: Allow failure output semantics
+inputs: []
+outputs: []
+steps:
+  - id: maybe-fail
+    type: command
+    name: Maybe Fail
+    command: /bin/sh
+    args:
+      - -c
+      - "exit 1"
+    allow_failure: true
+  - id: follow-success
+    type: agent
+    name: Follow Success
+    if: steps.maybe-fail.outputs.success == true
+    prompt: Should not run
+  - id: follow-failure
+    type: agent
+    name: Follow Failure
+    if: steps.maybe-fail.outputs.success != true
+    prompt: Should run
+`;
+
+      writeFileSync(workflowPath, yamlContent, 'utf8');
+      const workflow = WorkflowManager.load(workflowPath);
+
+      const agentStepIds: string[] = [];
+      const runner: WorkflowRunner = {
+        runAgentStep: async step => {
+          agentStepIds.push(step.id);
+          return {
+            id: step.id,
+            success: true,
+            duration: 0.1,
+            outputs: new Map(),
+          };
+        },
+      };
+
+      const result = await workflow.run(runner);
+
+      expect(result.success).toBe(true);
+      expect(agentStepIds).toEqual(['follow-failure']);
+      expect(result.stepsOutput.get('maybe-fail')?.get('success')).toBe(
+        'false'
+      );
     });
 
     it('should fail fast when loop execution requires runStep but it is missing', async () => {

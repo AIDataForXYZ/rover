@@ -30,25 +30,6 @@ import colors from 'ansi-colors';
 
 // Default step timeout in seconds
 const DEFAULT_STEP_TIMEOUT = 60 * 30; // 30 minutes
-const CONDITION_REFERENCE_REGEX =
-  /steps\.([\w-]+)\.outputs\.([\w-]+)\s*(==|!=)\s*.+/;
-
-function hasAllConditionOutputs(
-  condition: string,
-  stepsOutput: Map<string, Map<string, string>>
-): boolean {
-  const clauses = condition.split(/\s*\|\|\s*(?=steps\.)/);
-
-  return clauses.every(clause => {
-    const match = clause.trim().match(CONDITION_REFERENCE_REGEX);
-    if (!match) {
-      return false;
-    }
-
-    const [, stepId, outputName] = match;
-    return stepsOutput.get(stepId)?.has(outputName) === true;
-  });
-}
 
 export interface StepResult {
   id: string;
@@ -571,8 +552,9 @@ export class WorkflowManager {
     const duration = (Date.now() - startTime) / 1000;
     const exitCode = result.exitCode ?? (result.failed ? 1 : 0);
     const outputs = new Map<string, string>();
+    const commandSucceeded = exitCode === 0;
     outputs.set('exit_code', String(exitCode));
-    outputs.set('success', String(success));
+    outputs.set('success', String(commandSucceeded));
     if (stdout) {
       outputs.set('stdout', stdout);
     }
@@ -617,17 +599,6 @@ export class WorkflowManager {
 
       // Check `if` condition before running step
       if (step.if) {
-        if (!hasAllConditionOutputs(step.if, stepsOutput)) {
-          console.log(
-            colors.gray(
-              `  ⏭ Skipping step "${step.name}" (required outputs not available yet)`
-            )
-          );
-          stepsOutput.set(step.id, new Map());
-          flattenedStepIndex += stepWidth;
-          continue;
-        }
-
         const conditionResult = evaluateCondition(step.if, stepsOutput);
         if (!conditionResult) {
           console.log(
